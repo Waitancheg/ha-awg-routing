@@ -1,0 +1,15 @@
+build_from:
+  aarch64: ghcr.io/home-assistant/base:3.24
+  amd64: ghcr.io/home-assistant/base:3.24
+labels:
+  org.opencontainers.image.title: AmneziaWG Selective Route
+  org.opencontainers.image.description: Policy-route selected domains through an AmneziaWG client
+  org.opencontainers.image.source: https://github.com/Waitancheg/ha-awg-routing
+  org.opencontainers.image.licenses: MIT
+args:
+  AWG_GO_REF: v3.1.20261116
+  AWG_GO_SHA256: 5390f79949b9972669d006de95778ea9883fc16f7712a8b9ebfe63f96b52cf57
+  AWG_TOOLS_REF: v3.1.20260812
+  AWG_TOOLS_SHA256: dbd8ce0748d835d18f30bb76720246b7bfc80bd09cd17c379b1c59f683a18493
+  DNSMASQ_VERSION: "2.92"
+  DNSMASQ_SHA256: fd908e79ff37f73234afcb6d3363f78353e768703d92abd8e3220ade6819b1e1

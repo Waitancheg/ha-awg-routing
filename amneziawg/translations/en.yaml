@@ -1,0 +1,81 @@
+---
+configuration:
+  awg_conf:
+    name: AmneziaWG config
+    description: >-
+      Optional client config. When this is not empty it replaces the structured
+      key fields. Table, DNS, FwMark and PreUp/PostUp/PreDown/PostDown are
+      ignored. AllowedIPs is forced to 0.0.0.0/0 inside the tunnel only; the
+      host default route is not changed. Paste it in YAML mode as a literal block.
+  private_key:
+    name: Interface private key
+    description: Used only when the pasted config is empty. A placeholder from the server is fine; never commit a real key.
+  address:
+    name: Tunnel address
+    description: IPv4 address of this client inside the tunnel, for example 10.8.0.2/32. Taken from the pasted config when that is set.
+  jc:
+    name: Jc
+    description: Junk-packet count before a handshake. 0 omits Jc/Jmin/Jmax. Must match the server when obfuscation is enabled.
+  jmin:
+    name: Jmin
+    description: Minimum junk-packet size. Must be less than or equal to Jmax.
+  jmax:
+    name: Jmax
+    description: Maximum junk-packet size. Must be greater than or equal to Jmin.
+  s1:
+    name: S1
+    description: Handshake initiation padding. 0 omits the field.
+  s2:
+    name: S2
+    description: Handshake response padding. 0 omits the field.
+  h1:
+    name: H1
+    description: Init-packet header, a number or a range such as 123-456. Empty omits the field.
+  h2:
+    name: H2
+    description: Response-packet header, a number or a range. Empty omits the field.
+  h3:
+    name: H3
+    description: Cookie-packet header, a number or a range. Empty omits the field.
+  h4:
+    name: H4
+    description: Transport-packet header, a number or a range. Empty omits the field.
+  peer_public_key:
+    name: Peer public key
+    description: Server public key. Used only when the pasted config is empty.
+  preshared_key:
+    name: Preshared key
+    description: Optional. Leave empty when the server does not use a preshared key.
+  endpoint:
+    name: Endpoint
+    description: Server as host:port or IPv4:port. A hostname is resolved through upstream DNS, not through the tunnel.
+  keepalive:
+    name: Persistent keepalive
+    description: Seconds. 25 is a reasonable LTE NAT timeout. 0 disables it. Applied when the pasted config has no PersistentKeepalive line.
+  mtu:
+    name: MTU
+    description: Tunnel MTU. 1280 is the default for LTE. A MTU line in the pasted config overrides this.
+  domains:
+    name: Domains
+    description: Each name, and every subdomain, is routed through AmneziaWG. AAAA answers for these names are replaced with the IPv6 discard address.
+  cidrs:
+    name: CIDRs
+    description: IPv4 prefixes that are always routed through the tunnel. 0.0.0.0/0 is rejected.
+  exclude_cidrs:
+    name: Excluded CIDRs
+    description: Never send these destinations into the tunnel. 192.168.2.0/24 is the LAN. Tailscale 100.64.0.0/10 and the Home Assistant network are always excluded as well.
+  strict:
+    name: Strict mode
+    description: When the handshake is stale, selected destinations are blackholed instead of leaking out the normal default route. On by default.
+  upstream_dns:
+    name: Upstream DNS
+    description: IPv4 resolvers, or IPv4#port, used by the forwarder. Empty means 1.1.1.1 and 9.9.9.9. These resolvers are reached via the normal route, not the tunnel.
+  manage_dns:
+    name: Configure Supervisor DNS
+    description: Point CoreDNS at dns://<hassio gateway> and disable fallback, and restore the previous servers when the add-on stops. Requires the manager role.
+  route_timeout:
+    name: Route timeout
+    description: Seconds an address learned from DNS stays in the nftables set. Longer than the CoreDNS cache (at most one hour) so a connection is not moved back to LTE while the name is still cached.
+  log_level:
+    name: Log level
+    description: debug and trace also log each DNS query.

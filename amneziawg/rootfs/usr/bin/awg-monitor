@@ -1,0 +1,93 @@
+#!/bin/bash
+set -euo pipefail
+# shellcheck source=../lib/awg/lib.sh
+source /usr/lib/awg/lib.sh
+# shellcheck disable=SC1091
+source "${AWG_RUN_DIR}/runtime.env"
+
+prev=""
+ha_fail=0
+ticks=0
+
+publish() {
+  local up=$1 hs=$2 rx=$3 tx=$4 count=$5 hs_iso="unknown" state="off"
+  if [[ $hs =~ ^[0-9]+$ && $hs -gt 0 ]]; then
+    hs_iso=$(date -u -d "@${hs}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)
+  fi
+  [[ $up == 1 ]] && state=on
+  local body
+  body=$(jq -nc --arg state "$state" --arg hs "$hs_iso" --arg rx "$rx" --arg tx "$tx" \
+    --argjson strict "$([[ $opt_strict == true ]] && echo true || echo false)" \
+    --arg endpoint "${ENDPOINT_IP}:${ENDPOINT_PORT}" --arg count "$count" \
+    '{state:$state,attributes:{friendly_name:"AmneziaWG",device_class:"connectivity",icon:"mdi:vpn",last_handshake:$hs,rx_bytes:($rx|tonumber),tx_bytes:($tx|tonumber),strict:$strict,endpoint:$endpoint,routed_ips:($count|tonumber)}}')
+  if ha_state binary_sensor.amneziawg_tunnel "$body"; then
+    ha_fail=0
+  elif [[ $ha_fail -eq 0 ]]; then
+    log "Home Assistant API is not reachable yet; states will be retried"
+    ha_fail=1
+  fi
+  ha_state sensor.amneziawg_routed_ips "$(jq -nc --arg c "$count" '{state:$c,attributes:{friendly_name:"AmneziaWG routed IPs",icon:"mdi:ip-network",state_class:"measurement"}}')" || true
+  ha_state sensor.amneziawg_rx_bytes "$(jq -nc --arg n "$rx" '{state:$n,attributes:{friendly_name:"AmneziaWG received",device_class:"data_size",unit_of_measurement:"B",state_class:"total_increasing",icon:"mdi:download"}}')" || true
+  ha_state sensor.amneziawg_tx_bytes "$(jq -nc --arg n "$tx" '{state:$n,attributes:{friendly_name:"AmneziaWG sent",device_class:"data_size",unit_of_measurement:"B",state_class:"total_increasing",icon:"mdi:upload"}}')" || true
+  if [[ $hs_iso == unknown ]]; then
+    ha_state sensor.amneziawg_last_handshake "$(jq -nc '{state:"unknown",attributes:{friendly_name:"AmneziaWG last handshake",device_class:"timestamp",icon:"mdi:handshake"}}')" || true
+  else
+    ha_state sensor.amneziawg_last_handshake "$(jq -nc --arg t "$hs_iso" '{state:$t,attributes:{friendly_name:"AmneziaWG last handshake",device_class:"timestamp",icon:"mdi:handshake"}}')" || true
+  fi
+}
+
+refresh_endpoint() {
+  local new
+  [[ $ENDPOINT_HOST != "$ENDPOINT_IP" ]] || return 0
+  new=$(resolve_name "$ENDPOINT_HOST") || {
+    log "endpoint ${ENDPOINT_HOST} did not resolve; keeping ${ENDPOINT_IP}"
+    return 0
+  }
+  [[ $new == "$ENDPOINT_IP" ]] && return 0
+  log "endpoint ${ENDPOINT_HOST} changed from ${ENDPOINT_IP} to ${new}"
+  nft delete element inet "$AWG_NFT" exclude_v4 "{ ${ENDPOINT_IP} }" 2>/dev/null || true
+  nft add element inet "$AWG_NFT" exclude_v4 "{ ${new}/32 }"
+  ENDPOINT_IP=$new
+  ensure_endpoint_rule
+  awg set "$AWG_IF" peer "$PEER_PUB" endpoint "${ENDPOINT_IP}:${ENDPOINT_PORT}"
+  write_runtime_env
+}
+
+while true; do
+  hs=0 rx=0 tx=0 up=0
+  if [[ -f ${AWG_RUN_DIR}/ready ]] && ip link show "$AWG_IF" >/dev/null 2>&1; then
+    dump=$(awg show "$AWG_IF" dump 2>/dev/null || true)
+    line=$(printf '%s\n' "$dump" | sed -n '2p')
+    if [[ -n $line ]]; then
+      IFS=$'\t' read -r _ _ _ _ hs rx tx _ <<<"$line"
+    fi
+    [[ ${hs:-0} =~ ^[0-9]+$ ]] || hs=0
+    [[ ${rx:-0} =~ ^[0-9]+$ ]] || rx=0
+    [[ ${tx:-0} =~ ^[0-9]+$ ]] || tx=0
+    now=$(date +%s)
+    if [[ $hs -gt 0 && $((now - hs)) -lt $AWG_HANDSHAKE_MAX_AGE ]]; then
+      up=1
+      set_route up || log "failed to install the awg route"
+    else
+      set_route down || log "failed to update the strict-mode route"
+    fi
+  else
+    set_route down || true
+  fi
+  if [[ $up != "$prev" ]]; then
+    if [[ $up == 1 ]]; then
+      log "tunnel up; selected traffic uses ${AWG_IF}"
+    elif [[ $opt_strict == true ]]; then
+      log "tunnel down; strict mode blackholes selected traffic"
+    else
+      log "tunnel down; selected traffic uses the main default route"
+    fi
+    prev=$up
+  fi
+  if [[ $((ticks % 20)) -eq 0 ]]; then
+    refresh_endpoint || true
+  fi
+  publish "$up" "${hs:-0}" "${rx:-0}" "${tx:-0}" "$(count_routed)" || log "status update failed"
+  ticks=$((ticks + 1))
+  sleep 15
+done
