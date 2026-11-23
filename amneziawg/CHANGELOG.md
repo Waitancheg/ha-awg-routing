@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Образы amd64 и aarch64 собираются в GitHub Actions и публикуются в GHCR. Установка на Home Assistant больше не компилирует дополнение на устройстве.
+
 ## 1.0.0
 
 - Клиент AmneziaWG на `amneziawg-go` v3.1.20261116 и `amneziawg-tools` v3.1.20260812, без модуля ядра.
