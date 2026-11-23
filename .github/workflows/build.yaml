@@ -103,5 +103,5 @@ jobs:
           VERSION: ${{ needs.init.outputs.version }}
         run: |
           docker logout ghcr.io || true
-          docker pull "ghcr.io/waitancheg/amd64-addon-amneziawg:${VERSION}"
-          docker pull "ghcr.io/waitancheg/aarch64-addon-amneziawg:${VERSION}"
+          docker pull --platform linux/amd64 "ghcr.io/waitancheg/amd64-addon-amneziawg:${VERSION}"
+          docker pull --platform linux/arm64 "ghcr.io/waitancheg/aarch64-addon-amneziawg:${VERSION}"
