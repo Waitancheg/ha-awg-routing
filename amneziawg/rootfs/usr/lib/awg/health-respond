@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+code=200
+reason=OK
+body=ok
+if [[ -f /run/awg/ready ]]; then
+  if ! pgrep -x amneziawg-go >/dev/null 2>&1 || ! pgrep -x dns-snoop >/dev/null 2>&1; then
+    code=503
+    reason="Service Unavailable"
+    body=down
+  fi
+fi
+printf 'HTTP/1.1 %s %s\r\nContent-Type: text/plain\r\nContent-Length: %s\r\nConnection: close\r\n\r\n%s' \
+  "$code" "$reason" "${#body}" "$body"

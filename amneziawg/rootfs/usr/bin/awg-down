@@ -1,0 +1,14 @@
+#!/bin/bash
+set -uo pipefail
+# shellcheck source=../lib/awg/lib.sh
+source /usr/lib/awg/lib.sh
+
+if [[ -f ${AWG_RUN_DIR}/runtime.env ]]; then
+  # shellcheck disable=SC1091
+  source "${AWG_RUN_DIR}/runtime.env"
+fi
+
+ha_state binary_sensor.amneziawg_tunnel "$(jq -nc '{state:"off",attributes:{friendly_name:"AmneziaWG",device_class:"connectivity",icon:"mdi:vpn"}}')" || true
+cleanup_dataplane || true
+log "removed nftables, policy rules and ${AWG_IF}"
+exit 0

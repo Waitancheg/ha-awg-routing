@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+# shellcheck source=../lib/awg/lib.sh
+source /usr/lib/awg/lib.sh
+
+# The base image busybox has no httpd applet. nc answers every request on
+# this port; the Supervisor watchdog only checks that the status is below 300.
+exec nc -lk -p "$HEALTH_PORT" -e /usr/lib/awg/health-respond

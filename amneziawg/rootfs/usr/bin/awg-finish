@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+code=${1:-0}
+signal=${2:-0}
+if [[ $code -eq 0 || $code -eq 143 ]]; then
+  exit 0
+fi
+if [[ $code -eq 256 && $signal -eq 15 ]]; then
+  exit 0
+fi
+printf '[awg] service failed: exit=%s signal=%s\n' "$code" "$signal" >&2
+if [[ -f /run/s6-linux-init-container-results/exitcode ]]; then
+  current=$(</run/s6-linux-init-container-results/exitcode)
+  if [[ ${current:-0} -eq 0 ]]; then
+    printf '%s\n' "$code" >/run/s6-linux-init-container-results/exitcode
+  fi
+fi
+exec /run/s6/basedir/bin/halt

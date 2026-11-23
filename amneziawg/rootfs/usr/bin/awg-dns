@@ -1,0 +1,18 @@
+#!/bin/bash
+set -euo pipefail
+# shellcheck source=../lib/awg/lib.sh
+source /usr/lib/awg/lib.sh
+# shellcheck disable=SC1091
+source "${AWG_RUN_DIR}/runtime.env"
+
+args=(
+  --timeout "$opt_route_timeout"
+  --domains "${AWG_RUN_DIR}/domains"
+  --state /data/learned.json
+  --count "${AWG_RUN_DIR}/snoop_count"
+)
+if [[ $opt_warmup == true ]]; then
+  args+=(--warmup)
+fi
+mkdir -p /data
+exec dns-snoop "${args[@]}"
