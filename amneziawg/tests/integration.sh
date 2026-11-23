@@ -97,6 +97,7 @@ echo '--- strict route and health ---'
 sudo docker exec "$name" ip route show table 51820 | grep -q blackhole
 sudo docker exec "$name" ip rule show | grep -q 'fwmark 0x77'
 sudo docker exec "$name" nft list chain inet awg_pbr v6out | grep -q routed_v6
+sudo docker exec "$name" nft list chain inet awg_pbr srcnat | grep -q 'oifname "awg0" masquerade'
 sudo docker exec "$name" curl -fsS http://127.0.0.1:10799/cgi-bin/health | grep -q ok
 
 echo '--- cache persisted ---'
