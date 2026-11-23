@@ -9,7 +9,6 @@ if [[ -f ${AWG_RUN_DIR}/runtime.env ]]; then
 fi
 
 ha_state binary_sensor.amneziawg_tunnel "$(jq -nc '{state:"off",attributes:{friendly_name:"AmneziaWG",device_class:"connectivity",icon:"mdi:vpn"}}')" || true
-restore_supervisor_dns || true
 cleanup_dataplane || true
 log "removed nftables, policy rules and ${AWG_IF}"
 exit 0

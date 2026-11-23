@@ -15,7 +15,6 @@ AWG_NFT=awg_pbr
 # shellcheck disable=SC2034
 AWG_HANDSHAKE_MAX_AGE=180
 HEALTH_PORT=10799
-V6_DISCARD=100::1
 AWG_RUN_DIR=${AWG_RUN_DIR:-/run/awg}
 AWG_OPTIONS=${AWG_OPTIONS:-/data/options.json}
 
@@ -83,18 +82,6 @@ valid_hrange() {
   [[ $left -le 4294967295 && $right -le 4294967295 && $left -le $right ]]
 }
 
-valid_upstream() {
-  local u=$1 ip port
-  if [[ $u == *#* ]]; then
-    ip=${u%%#*}
-    port=${u#*#}
-    valid_ipv4 "$ip" || return 1
-    [[ $port =~ ^[0-9]+$ && $port -ge 1 && $port -le 65535 ]]
-  else
-    valid_ipv4 "$u"
-  fi
-}
-
 load_options() {
   [[ -f $AWG_OPTIONS ]] || die "config file not found: ${AWG_OPTIONS}"
   OPT_JSON=$(<"$AWG_OPTIONS")
@@ -117,18 +104,17 @@ load_options() {
   opt_endpoint=$(jq -r '.endpoint // ""' <<<"$OPT_JSON")
   opt_keepalive=$(jq -r '.keepalive // 25' <<<"$OPT_JSON")
   opt_mtu=$(jq -r '.mtu // 1280' <<<"$OPT_JSON")
-  opt_strict=$(jq -r '.strict // true' <<<"$OPT_JSON")
-  opt_manage_dns=$(jq -r '.manage_dns // true' <<<"$OPT_JSON")
+  opt_strict=$(jq -r 'if has("strict") then .strict else true end' <<<"$OPT_JSON")
+  opt_warmup=$(jq -r 'if has("warmup") then .warmup else true end' <<<"$OPT_JSON")
   opt_route_timeout=$(jq -r '.route_timeout // 86400' <<<"$OPT_JSON")
   opt_log_level=$(jq -r '.log_level // "info"' <<<"$OPT_JSON")
 
   mapfile -t opt_domains < <(jq -r '.domains // [] | .[]' <<<"$OPT_JSON")
   mapfile -t opt_cidrs < <(jq -r '.cidrs // [] | .[]' <<<"$OPT_JSON")
   mapfile -t opt_exclude < <(jq -r '.exclude_cidrs // [] | .[]' <<<"$OPT_JSON")
-  mapfile -t opt_upstream < <(jq -r '.upstream_dns // [] | .[]' <<<"$OPT_JSON")
 
   [[ $opt_strict == true || $opt_strict == false ]] || die "strict must be true or false"
-  [[ $opt_manage_dns == true || $opt_manage_dns == false ]] || die "manage_dns must be true or false"
+  [[ $opt_warmup == true || $opt_warmup == false ]] || die "warmup must be true or false"
   if ! valid_uint "$opt_jc" || ! valid_uint "$opt_jmin" || ! valid_uint "$opt_jmax"; then
     die "Jc/Jmin/Jmax must be integers"
   fi
@@ -149,7 +135,7 @@ load_options() {
   [[ -z $opt_h3 ]] || valid_hrange "$opt_h3" || die "bad H3"
   [[ -z $opt_h4 ]] || valid_hrange "$opt_h4" || die "bad H4"
 
-  local d c u
+  local d c
   DOMAINS=()
   for d in "${opt_domains[@]}"; do
     [[ -n $d ]] || continue
@@ -172,12 +158,6 @@ load_options() {
     valid_cidr "$c" || die "invalid exclude CIDR: ${c}"
     EXCLUDES+=("$c")
   done
-  UPSTREAMS=()
-  for u in "${opt_upstream[@]}"; do
-    [[ -n $u ]] || continue
-    valid_upstream "$u" || die "upstream_dns must be an IPv4 address or IPv4#port, got: ${u}"
-    UPSTREAMS+=("$u")
-  done
   if [[ $opt_jc -gt 0 || $opt_jmin -gt 0 || $opt_jmax -gt 0 ]]; then
     [[ $opt_jc -gt 0 && $opt_jmax -gt 0 && $opt_jmin -le $opt_jmax ]] || die "when junk packets are used, Jc > 0 and Jmin <= Jmax"
   fi
@@ -186,68 +166,14 @@ load_options() {
   fi
 }
 
-detect_dns_ip() {
-  if [[ -n ${AWG_DNS_IP:-} ]]; then
-    DNS_IP=$AWG_DNS_IP
-    DNS_IFACE=${AWG_DNS_IFACE:-lo}
-    return
-  fi
-  local line ip
-  line=$(ip -4 -o addr show 2>/dev/null | awk '$4 ~ /^172\.30\.32\.1\// { print $2, $4; exit }')
-  if [[ -n $line ]]; then
-    DNS_IFACE=${line%% *}
-    DNS_IP=172.30.32.1
-    return
-  fi
-  if ip link show hassio >/dev/null 2>&1; then
-    ip=$(ip -4 -o addr show dev hassio | awk '{ print $4; exit }')
-    ip=${ip%%/*}
-    if [[ -n $ip ]]; then
-      DNS_IFACE=hassio
-      DNS_IP=$ip
-      return
-    fi
-  fi
-  DNS_IFACE=lo
-  DNS_IP=127.0.0.1
-  log "hassio bridge address 172.30.32.1 was not found; DNS listens on 127.0.0.1 only"
-}
-
-choose_upstreams() {
-  local -a ups=()
-  local u ip
-  if [[ ${#UPSTREAMS[@]} -gt 0 ]]; then
-    ups=("${UPSTREAMS[@]}")
-  else
-    ups=(1.1.1.1 9.9.9.9)
-  fi
-  : >"${AWG_RUN_DIR}/upstreams"
-  for u in "${ups[@]}"; do
-    ip=${u%%#*}
-    [[ $ip == "$DNS_IP" ]] && continue
-    printf '%s\n' "$u" >>"${AWG_RUN_DIR}/upstreams"
-  done
-  if [[ ! -s ${AWG_RUN_DIR}/upstreams ]]; then
-    printf '%s\n' 1.1.1.1 9.9.9.9 >"${AWG_RUN_DIR}/upstreams"
-  fi
-}
-
 resolve_name() {
-  local name=$1 server ip port=53
-  [[ -s ${AWG_RUN_DIR}/upstreams ]] || return 1
-  while read -r server; do
-    [[ -n $server ]] || continue
-    port=53
-    if [[ $server == *#* ]]; then
-      port=${server#*#}
-      server=${server%%#*}
-    fi
-    ip=$(dig +short +time=2 +tries=1 -p "$port" A "$name" @"$server" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
-    if valid_ipv4 "${ip:-}"; then
-      printf '%s' "$ip"
-      return 0
-    fi
-  done <"${AWG_RUN_DIR}/upstreams"
+  local name=$1 ip
+  # System resolver only. Do not pin a server: that would bypass MagicDNS and DHCP DNS.
+  ip=$(dig +short +time=2 +tries=1 A "$name" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+  if valid_ipv4 "${ip:-}"; then
+    printf '%s' "$ip"
+    return 0
+  fi
   return 1
 }
 
@@ -318,7 +244,7 @@ take_value() {
       return
       ;;
     dns)
-      log "ignoring DNS=: host resolv.conf is not touched; queries use upstream_dns"
+      log "ignoring DNS=: host resolver settings are not changed"
       return
       ;;
     table)
@@ -486,43 +412,17 @@ prepare_config() {
   else
     build_structured
   fi
-  detect_dns_ip
-  choose_upstreams
   write_awg_conf
-  write_dnsmasq_conf
+  write_domains
   write_runtime_env
 }
 
-write_dnsmasq_conf() {
-  local d server
-  {
-    printf '%s\n' \
-      "keep-in-foreground" \
-      "port=53" \
-      "listen-address=${DNS_IP}" \
-      "bind-interfaces" \
-      "no-resolv" \
-      "no-hosts" \
-      "cache-size=10000" \
-      "max-cache-ttl=3600" \
-      "stop-dns-rebind" \
-      "rebind-localhost-ok" \
-      "user=root"
-    if [[ $opt_log_level == debug || $opt_log_level == trace ]]; then
-      printf '%s\n' "log-queries" "log-facility=-"
-    else
-      printf '%s\n' "log-facility=-"
-    fi
-    while read -r server; do
-      [[ -n $server ]] && printf 'server=%s\n' "$server"
-    done <"${AWG_RUN_DIR}/upstreams"
-    for d in "${DOMAINS[@]}"; do
-      # 4# keeps AAAA answers out of the IPv4 set. AAAA itself is answered
-      # with the discard prefix so real IPv6 addresses are never learned.
-      printf 'nftset=/%s/4#inet#%s#routed_v4\n' "$d" "$AWG_NFT"
-      printf 'address=/%s/%s\n' "$d" "$V6_DISCARD"
-    done
-  } >"${AWG_RUN_DIR}/dnsmasq.conf"
+write_domains() {
+  local d
+  : >"${AWG_RUN_DIR}/domains"
+  for d in "${DOMAINS[@]}"; do
+    printf '%s\n' "$d" >>"${AWG_RUN_DIR}/domains"
+  done
 }
 
 write_runtime_env() {
@@ -535,10 +435,8 @@ write_runtime_env() {
     printf 'ENDPOINT_PORT=%q\n' "$ENDPOINT_PORT"
     printf 'ENDPOINT_IP=%q\n' "$ENDPOINT_IP"
     printf 'PEER_PUB=%q\n' "$PEER_PUB"
-    printf 'DNS_IP=%q\n' "$DNS_IP"
-    printf 'DNS_IFACE=%q\n' "$DNS_IFACE"
     printf 'opt_strict=%q\n' "$opt_strict"
-    printf 'opt_manage_dns=%q\n' "$opt_manage_dns"
+    printf 'opt_warmup=%q\n' "$opt_warmup"
     printf 'opt_log_level=%q\n' "$opt_log_level"
     printf 'opt_route_timeout=%q\n' "$opt_route_timeout"
     printf 'opt_keepalive=%q\n' "$opt_keepalive"
@@ -557,7 +455,7 @@ linked_subnet() {
 
 nft_up() {
   local -a excl=()
-  local c u ip subnet conf="${AWG_RUN_DIR}/nft.conf"
+  local subnet="" conf="${AWG_RUN_DIR}/nft.conf"
   excl=(
     0.0.0.0/8
     127.0.0.0/8
@@ -566,20 +464,17 @@ nft_up() {
     172.30.32.0/23
     224.0.0.0/4
   )
-  if [[ -n ${DNS_IFACE:-} && $DNS_IFACE != lo ]]; then
-    subnet=$(linked_subnet "$DNS_IFACE" || true)
+  if ip link show hassio >/dev/null 2>&1; then
+    subnet=$(linked_subnet hassio || true)
     [[ -n $subnet ]] && excl+=("$subnet")
   fi
   excl+=("${EXCLUDES[@]}")
   excl+=("${ENDPOINT_IP}/32")
-  while read -r u; do
-    ip=${u%%#*}
-    valid_ipv4 "$ip" && excl+=("${ip}/32")
-  done <"${AWG_RUN_DIR}/upstreams"
 
   {
     printf 'table inet %s {\n' "$AWG_NFT"
     printf '  set routed_v4 { type ipv4_addr; flags timeout; timeout %ss; }\n' "$opt_route_timeout"
+    printf '  set routed_v6 { type ipv6_addr; flags timeout; timeout %ss; }\n' "$opt_route_timeout"
     printf '  set cidrs_v4 { type ipv4_addr; flags interval; }\n'
     printf '  set exclude_v4 { type ipv4_addr; flags interval; auto-merge; }\n'
     printf '  chain tag {\n'
@@ -591,8 +486,10 @@ nft_up() {
     printf '  chain output { type route hook output priority mangle; policy accept; jump tag; }\n'
     printf '  chain prerouting { type filter hook prerouting priority mangle; policy accept; jump tag; }\n'
     printf '  chain postrouting { type filter hook postrouting priority mangle; policy accept; oifname "%s" tcp flags syn tcp option maxseg size set %s; }\n' "$AWG_IF" "$AWG_MSS"
-    printf '  chain v6out { type filter hook output priority filter; policy accept; meta nfproto ipv6 ip6 daddr 100::/64 reject with icmpv6 admin-prohibited; }\n'
-    printf '  chain v6fwd { type filter hook forward priority filter; policy accept; meta nfproto ipv6 ip6 daddr 100::/64 reject with icmpv6 admin-prohibited; }\n'
+    if [[ $opt_strict == true ]]; then
+      printf '  chain v6out { type filter hook output priority filter; policy accept; ip6 daddr @routed_v6 reject with icmpv6 admin-prohibited; }\n'
+      printf '  chain v6fwd { type filter hook forward priority filter; policy accept; ip6 daddr @routed_v6 reject with icmpv6 admin-prohibited; }\n'
+    fi
     printf '  chain health { type filter hook input priority filter; policy accept; tcp dport %s ip saddr != { 127.0.0.0/8, 172.30.32.0/23 } drop; }\n' "$HEALTH_PORT"
     printf '}\n'
   } >"$conf"
@@ -678,72 +575,6 @@ rules_up() {
   ensure_fwmark_rule
   ensure_endpoint_rule
   set_route down
-}
-
-manual_dns_hint() {
-  log "point Home Assistant DNS at this resolver:"
-  log "  ha dns options --servers dns://${DNS_IP} --fallback=false"
-  log "Supervisor DNS accepts only dns://IPv4 (port 53). CoreDNS also keeps the host DNS as a later forwarder."
-}
-
-apply_supervisor_dns() {
-  [[ ${opt_manage_dns:-true} == true ]] || {
-    manual_dns_hint
-    return 0
-  }
-  if [[ -z ${SUPERVISOR_TOKEN:-} ]]; then
-    log "SUPERVISOR_TOKEN is unset; Supervisor DNS was not changed"
-    manual_dns_hint
-    return 0
-  fi
-  if [[ $DNS_IP == 127.0.0.1 ]]; then
-    log "refusing to set Supervisor DNS to 127.0.0.1 (that address is not this resolver for CoreDNS)"
-    manual_dns_hint
-    return 0
-  fi
-  local info ours http
-  ours="dns://${DNS_IP}"
-  info=$(curl -fsS -m 5 -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/dns/info) || {
-    log "GET /dns/info failed; set DNS manually"
-    manual_dns_hint
-    return 0
-  }
-  if jq -e --arg ours "$ours" '.data.servers == [$ours] and .data.fallback == false' <<<"$info" >/dev/null; then
-    log "Supervisor DNS already uses ${ours} with fallback disabled"
-    return 0
-  fi
-  mkdir -p /data
-  if [[ ! -f /data/dns-backup.json ]]; then
-    jq -c '{servers: .data.servers, fallback: .data.fallback}' <<<"$info" >/data/dns-backup.json
-  fi
-  http=$(curl -sS -m 5 -o /tmp/awg-dns-body -w '%{http_code}' -X POST \
-    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "$(jq -nc --arg s "$ours" '{servers: [$s], fallback: false}')" \
-    http://supervisor/dns/options || true)
-  if [[ $http != 200 ]]; then
-    log "POST /dns/options returned ${http}; the add-on needs hassio_role: manager"
-    [[ -f /tmp/awg-dns-body ]] && log "response: $(tr '\n' ' ' </tmp/awg-dns-body)"
-    manual_dns_hint
-    return 0
-  fi
-  log "Supervisor DNS set to ${ours}, fallback disabled"
-}
-
-restore_supervisor_dns() {
-  [[ -n ${SUPERVISOR_TOKEN:-} && -f /data/dns-backup.json ]] || return 0
-  local http
-  http=$(curl -sS -m 5 -o /tmp/awg-dns-body -w '%{http_code}' -X POST \
-    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
-    -H "Content-Type: application/json" \
-    --data-binary @/data/dns-backup.json \
-    http://supervisor/dns/options || true)
-  if [[ $http == 200 ]]; then
-    log "restored Supervisor DNS"
-    rm -f /data/dns-backup.json
-  else
-    log "could not restore Supervisor DNS (HTTP ${http}); backup remains at /data/dns-backup.json"
-  fi
 }
 
 ha_state() {

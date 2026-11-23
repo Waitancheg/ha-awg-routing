@@ -1,7 +1,7 @@
 name: AmneziaWG Selective Route
 version: 1.0.0
 slug: amneziawg
-description: AmneziaWG client that routes only selected domains and CIDRs. The host default route stays on the existing uplink.
+description: AmneziaWG client that routes only selected domains and CIDRs. Host DNS settings are left unchanged.
 url: https://github.com/Waitancheg/ha-awg-routing
 arch:
   - aarch64
@@ -11,13 +11,12 @@ boot: auto
 init: false
 host_network: true
 apparmor: false
-hassio_api: true
-hassio_role: manager
 homeassistant_api: true
 devices:
   - /dev/net/tun
 privileged:
   - NET_ADMIN
+  - NET_RAW
 watchdog: http://[HOST]:[PORT:10799]/cgi-bin/health
 options:
   awg_conf: ""
@@ -40,8 +39,7 @@ options:
   exclude_cidrs:
     - 192.168.2.0/24
   strict: true
-  upstream_dns: []
-  manage_dns: true
+  warmup: true
   route_timeout: 86400
   log_level: info
 schema:
@@ -69,9 +67,7 @@ schema:
   exclude_cidrs:
     - str
   strict: bool
-  upstream_dns:
-    - str
-  manage_dns: bool
+  warmup: bool
   route_timeout: int(60,604800)
   log_level: list(trace|debug|info|notice|warning|error|fatal)
 stage: stable

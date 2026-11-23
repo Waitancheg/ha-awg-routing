@@ -57,7 +57,10 @@ configuration:
     description: Tunnel MTU. 1280 is the default for LTE. A MTU line in the pasted config overrides this.
   domains:
     name: Domains
-    description: Each name, and every subdomain, is routed through AmneziaWG. AAAA answers for these names are replaced with the IPv6 discard address.
+    description: >-
+      A query for this name or any subdomain is learned from DNS responses the
+      host already receives. List each parent you care about. The add-on does
+      not run a resolver and does not change DNS settings.
   cidrs:
     name: CIDRs
     description: IPv4 prefixes that are always routed through the tunnel. 0.0.0.0/0 is rejected.
@@ -67,15 +70,12 @@ configuration:
   strict:
     name: Strict mode
     description: When the handshake is stale, selected destinations are blackholed instead of leaking out the normal default route. On by default.
-  upstream_dns:
-    name: Upstream DNS
-    description: IPv4 resolvers, or IPv4#port, used by the forwarder. Empty means 1.1.1.1 and 9.9.9.9. These resolvers are reached via the normal route, not the tunnel.
-  manage_dns:
-    name: Configure Supervisor DNS
-    description: Point CoreDNS at dns://<hassio gateway> and disable fallback, and restore the previous servers when the add-on stops. Requires the manager role.
+  warmup:
+    name: Warm up exact names
+    description: At start, resolve each listed name once through the system resolver and remember the addresses. Subdomains are learned only when something actually looks them up.
   route_timeout:
     name: Route timeout
-    description: Seconds an address learned from DNS stays in the nftables set. Longer than the CoreDNS cache (at most one hour) so a connection is not moved back to LTE while the name is still cached.
+    description: Seconds a learned address stays in the routing set. Each later DNS sighting refreshes the timer. Default is 24 hours.
   log_level:
     name: Log level
-    description: debug and trace also log each DNS query.
+    description: Controls add-on log verbosity.

@@ -27,6 +27,12 @@ publish() {
     ha_fail=1
   fi
   ha_state sensor.amneziawg_routed_ips "$(jq -nc --arg c "$count" '{state:$c,attributes:{friendly_name:"AmneziaWG routed IPs",icon:"mdi:ip-network",state_class:"measurement"}}')" || true
+  local snooped=0
+  if [[ -f ${AWG_RUN_DIR}/snoop_count ]]; then
+    snooped=$(tr -cd '0-9' <"${AWG_RUN_DIR}/snoop_count" || true)
+  fi
+  [[ -n $snooped ]] || snooped=0
+  ha_state sensor.amneziawg_snooped "$(jq -nc --arg n "$snooped" '{state:$n,attributes:{friendly_name:"AmneziaWG snooped answers",icon:"mdi:eye",state_class:"total_increasing"}}')" || true
   ha_state sensor.amneziawg_rx_bytes "$(jq -nc --arg n "$rx" '{state:$n,attributes:{friendly_name:"AmneziaWG received",device_class:"data_size",unit_of_measurement:"B",state_class:"total_increasing",icon:"mdi:download"}}')" || true
   ha_state sensor.amneziawg_tx_bytes "$(jq -nc --arg n "$tx" '{state:$n,attributes:{friendly_name:"AmneziaWG sent",device_class:"data_size",unit_of_measurement:"B",state_class:"total_increasing",icon:"mdi:upload"}}')" || true
   if [[ $hs_iso == unknown ]]; then

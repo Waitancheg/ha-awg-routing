@@ -37,7 +37,7 @@ if (
     domains: ["*.Example.COM.", "openapi.tuyaeu.com"],
     cidrs: ["203.0.113.0/24"],
     exclude_cidrs: ["192.168.2.0/24"],
-    strict: true, upstream_dns: [], manage_dns: false,
+    strict: true, warmup: false,
     route_timeout: 86400, log_level: "info"
   }' >"${AWG_RUN_DIR}/options.json"
   prepare_json "${AWG_RUN_DIR}/options.json"
@@ -46,10 +46,8 @@ if (
   grep -q 'Endpoint = 203.0.113.10:51820' "${AWG_RUN_DIR}/awg0.conf"
   grep -q 'AllowedIPs = 0.0.0.0/0' "${AWG_RUN_DIR}/awg0.conf"
   grep -q 'PersistentKeepalive = 25' "${AWG_RUN_DIR}/awg0.conf"
-  grep -q 'nftset=/example.com/4#inet#awg_pbr#routed_v4' "${AWG_RUN_DIR}/dnsmasq.conf"
-  grep -q 'address=/example.com/100::1' "${AWG_RUN_DIR}/dnsmasq.conf"
-  grep -q 'nftset=/openapi.tuyaeu.com/4#inet#awg_pbr#routed_v4' "${AWG_RUN_DIR}/dnsmasq.conf"
-  grep -q 'listen-address=127.0.0.1' "${AWG_RUN_DIR}/dnsmasq.conf"
+  grep -qx 'example.com' "${AWG_RUN_DIR}/domains"
+  grep -qx 'openapi.tuyaeu.com' "${AWG_RUN_DIR}/domains"
   ! grep -q 'Table' "${AWG_RUN_DIR}/awg0.conf"
 ); then ok structured; else bad structured; fi
 
@@ -83,7 +81,7 @@ if (
     h1: "", h2: "", h3: "", h4: "",
     endpoint: "", keepalive: 25, mtu: 1280,
     domains: [], cidrs: [], exclude_cidrs: [],
-    strict: false, upstream_dns: ["9.9.9.9"], manage_dns: false,
+    strict: false, warmup: true,
     route_timeout: 3600, log_level: "info"
   }' >"${AWG_RUN_DIR}/options.json"
   prepare_json "${AWG_RUN_DIR}/options.json"
@@ -99,7 +97,7 @@ if (
   ! grep -q 'Address' "${AWG_RUN_DIR}/awg0.conf"
   grep -q '^AWG_ADDRESS=10\.9\.0\.2/32' "${AWG_RUN_DIR}/runtime.env" || grep -q "AWG_ADDRESS=10.9.0.2/32" "${AWG_RUN_DIR}/runtime.env"
   grep -q '^AWG_MTU=1400' "${AWG_RUN_DIR}/runtime.env" || grep -q "AWG_MTU=1400" "${AWG_RUN_DIR}/runtime.env"
-  grep -q 'server=9.9.9.9' "${AWG_RUN_DIR}/dnsmasq.conf"
+  [[ ! -s ${AWG_RUN_DIR}/domains ]]
 ); then ok pasted; else bad pasted; fi
 
 expect_die() {
@@ -121,7 +119,7 @@ expect_die default-cidr bash -c "
     endpoint:\"203.0.113.10:51820\", jc:0,jmin:0,jmax:0,s1:0,s2:0,
     h1:\"\",h2:\"\",h3:\"\",h4:\"\", keepalive:25, mtu:1280,
     domains:[], cidrs:[\"0.0.0.0/0\"], exclude_cidrs:[], strict:true,
-    upstream_dns:[], manage_dns:false, route_timeout:86400, log_level:\"info\"
+    warmup:false, route_timeout:86400, log_level:\"info\"
   }' >\"\$AWG_RUN_DIR/options.json\"
   AWG_OPTIONS=\$AWG_RUN_DIR/options.json
   load_options
@@ -134,7 +132,7 @@ expect_die bad-domain bash -c "
     awg_conf:\"\", address:\"\", endpoint:\"\", jc:0,jmin:0,jmax:0,s1:0,s2:0,
     h1:\"\",h2:\"\",h3:\"\",h4:\"\", keepalive:25, mtu:1280,
     domains:[\"not a domain\"], cidrs:[], exclude_cidrs:[], strict:true,
-    upstream_dns:[], manage_dns:false, route_timeout:86400, log_level:\"info\"
+    warmup:false, route_timeout:86400, log_level:\"info\"
   }' >\"\$AWG_RUN_DIR/options.json\"
   AWG_OPTIONS=\$AWG_RUN_DIR/options.json
   load_options
@@ -148,7 +146,7 @@ expect_die junk-order bash -c "
     endpoint:\"203.0.113.10:51820\", jc:4, jmin:80, jmax:10, s1:0, s2:0,
     h1:\"\",h2:\"\",h3:\"\",h4:\"\", keepalive:25, mtu:1280,
     domains:[], cidrs:[], exclude_cidrs:[], strict:true,
-    upstream_dns:[], manage_dns:false, route_timeout:86400, log_level:\"info\"
+    warmup:false, route_timeout:86400, log_level:\"info\"
   }' >\"\$AWG_RUN_DIR/options.json\"
   AWG_OPTIONS=\$AWG_RUN_DIR/options.json
   load_options

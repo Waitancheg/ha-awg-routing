@@ -10,10 +10,10 @@ nft_up
 rules_up
 
 log "interface ${AWG_IF}, address ${AWG_ADDRESS}, endpoint ${ENDPOINT_IP}:${ENDPOINT_PORT}, strict=${opt_strict}"
-log "dns ${DNS_IP}:53, routed domains: ${#DOMAINS[@]}, cidrs: ${#CIDRS[@]}, route timeout ${opt_route_timeout}s"
+log "watching DNS responses for ${#DOMAINS[@]} names, cidrs: ${#CIDRS[@]}, route timeout ${opt_route_timeout}s"
 if [[ $opt_strict == true ]]; then
   log "strict mode: selected destinations are blackholed until the handshake is fresh"
 else
   log "strict mode off: selected destinations use the main route while the tunnel is down"
 fi
-manual_dns_hint
+log "system DNS is not modified"
