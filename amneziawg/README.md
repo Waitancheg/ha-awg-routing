@@ -66,7 +66,7 @@ sysctl -w net.ipv4.conf.awg0.rp_filter=2
 ## Установка
 
 1. Магазин дополнений → Репозитории → `https://github.com/Waitancheg/ha-awg-routing`.
-2. Установите **AmneziaWG Selective Route**. Первая сборка на устройстве компилирует `amneziawg-go` в один поток.
+2. Установите **AmneziaWG Selective Route**. Образ уже собран в GHCR (`ghcr.io/waitancheg/amd64-addon-amneziawg` и `ghcr.io/waitancheg/aarch64-addon-amneziawg`, тег — версия из `config.yaml`). Home Assistant его скачивает, на даче ничего компилировать не нужно. Пакеты в GHCR должны быть публичными, иначе загрузка без логина не пройдёт.
 3. Вставьте клиентский конфиг в `awg_conf` (в YAML блоком `|`) или заполните ключи, адрес и endpoint. Параметры AmneziaWG 2/3 (I1–I5, S3–S4, HeaderProtectionKey) проходят во вставленном конфиге. Пример без настоящих ключей:
 
    ```yaml
