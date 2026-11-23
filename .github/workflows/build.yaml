@@ -4,8 +4,9 @@ on:
   push:
     branches:
       - main
-      # This branch publishes 1.0.1 before main's config.yaml points at it.
+      # These branches publish the version before main's config.yaml points at it.
       - cursor/prebuilt-images-1355
+      - cursor/awg-srcnat-1355
     tags:
       - "*"
   workflow_dispatch:

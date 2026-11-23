@@ -1,5 +1,5 @@
 name: AmneziaWG Selective Route
-version: "1.0.1"
+version: "1.0.2"
 image: "ghcr.io/waitancheg/{arch}-addon-amneziawg"
 slug: amneziawg
 description: AmneziaWG client that routes only selected domains and CIDRs. Host DNS settings are left unchanged.

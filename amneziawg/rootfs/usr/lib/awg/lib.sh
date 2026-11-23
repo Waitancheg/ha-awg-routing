@@ -486,6 +486,7 @@ nft_up() {
     printf '  chain output { type route hook output priority mangle; policy accept; jump tag; }\n'
     printf '  chain prerouting { type filter hook prerouting priority mangle; policy accept; jump tag; }\n'
     printf '  chain postrouting { type filter hook postrouting priority mangle; policy accept; oifname "%s" tcp flags syn tcp option maxseg size set %s; }\n' "$AWG_IF" "$AWG_MSS"
+    printf '  chain srcnat { type nat hook postrouting priority srcnat; policy accept; oifname "%s" masquerade; }\n' "$AWG_IF"
     if [[ $opt_strict == true ]]; then
       printf '  chain v6out { type filter hook output priority filter; policy accept; ip6 daddr @routed_v6 reject with icmpv6 admin-prohibited; }\n'
       printf '  chain v6fwd { type filter hook forward priority filter; policy accept; ip6 daddr @routed_v6 reject with icmpv6 admin-prohibited; }\n'
